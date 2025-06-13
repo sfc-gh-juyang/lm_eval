@@ -1,0 +1,311 @@
+# Llama 4 MMLU/MMMU Evaluation Framework - .gitignore
+
+# ================================
+# Python
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ================================
+# Virtual Environments
+# ================================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+py310/
+conda-meta/
+
+# ================================
+# Model Files & Weights
+# ================================
+# Hugging Face cache
+.cache/
+**/huggingface/
+transformers_cache/
+hf_cache/
+
+# Model weights and checkpoints
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pkl
+*.pickle
+model_weights/
+checkpoints/
+models/
+
+# Quantized models
+*.q4_0
+*.q4_1
+*.q5_0
+*.q5_1
+*.q8_0
+*.ggml
+*.gguf
+
+# ================================
+# Evaluation Results & Data
+# ================================
+# Result files
+*_results.json
+*_results.csv
+mmlu_results.*
+mmmu_results.*
+evaluation_results/
+results/
+outputs/
+
+# Log files
+*.log
+logs/
+*.out
+*.err
+
+# Datasets cache
+dataset_cache/
+.cache/datasets/
+*.arrow
+*.feather
+
+# Temporary evaluation files
+temp_eval/
+tmp_results/
+scratch/
+
+# ================================
+# System & IDE Files
+# ================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.nfs*
+
+# ================================
+# IDE & Editor Files
+# ================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ================================
+# Jupyter Notebook
+# ================================
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+profile_default/
+ipython_config.py
+*.ipynb
+
+# ================================
+# Testing & Coverage
+# ================================
+.coverage
+.pytest_cache/
+.tox/
+.nox/
+.coverage.*
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ================================
+# Documentation
+# ================================
+docs/_build/
+docs/build/
+.readthedocs.yml
+
+# ================================
+# Environment & Config Files
+# ================================
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Config files with secrets
+config.json
+secrets.json
+credentials.json
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Hugging Face tokens
+.huggingface_token
+hf_token.txt
+
+# ================================
+# CUDA & GPU Related
+# ================================
+# NVIDIA profiling
+*.nvprof
+*.prof
+nsight_*.txt
+
+# ================================
+# Large Files & Databases
+# ================================
+# Large data files
+*.csv
+*.tsv
+*.json
+*.jsonl
+*.parquet
+*.h5
+*.hdf5
+*.db
+*.sqlite
+*.sqlite3
+
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ================================
+# Temporary & Process Files
+# ================================
+# Process IDs
+*.pid
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Lock files
+*.lock
+.lock
+pip-log.txt
+
+# ================================
+# Custom Evaluation Framework
+# ================================
+# Custom exclusions for this project
+benchmark_cache/
+evaluation_cache/
+model_downloads/
+data_cache/
+
+# Custom result directories
+mmlu_outputs/
+mmmu_outputs/
+quick_eval_results/
+
+# Performance monitoring
+*.prof
+performance_logs/
+memory_usage.txt
+gpu_usage.txt
+
+# ================================
+# Security & Authentication
+# ================================
+# SSH keys
+*.rsa
+*.rsa.pub
+id_rsa*
+id_ed25519*
+
+# API keys and tokens
+*.token
+api_key.txt
+openai_key.txt
+anthropic_key.txt
+
+# ================================
+# Backup Files
+# ================================
+*.bak
+*.backup
+*.old
+*.orig
+*~ 
