@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MMLU Evaluation Script for Llama 4
-Evaluates Llama 4 models on the Massive Multitask Language Understanding benchmark.
+MMLU Evaluation Script for Hugging Face Models
+Evaluates any compatible Hugging Face model on the MMLU benchmark.
 """
 
 import os
@@ -96,21 +96,23 @@ MMLU_SUBJECTS = {
     'world_religions': 'Humanities'
 }
 
-class LlamaMMLUEvaluator:
-    """Evaluator class for running Llama 4 on MMLU benchmark."""
+class MMLUEvaluator:
+    """Evaluator class for running any HF model on MMLU benchmark."""
     
-    def __init__(self, model_name: str, quantization: Optional[str] = None, device: str = "auto"):
+    def __init__(self, model_name: str, quantization: Optional[str] = None, device: str = "auto", trust_remote_code: bool = True):
         """
         Initialize the evaluator.
         
         Args:
-            model_name: Name of the Llama 4 model to evaluate
+            model_name: Name of the Hugging Face model to evaluate
             quantization: Optional quantization method ('4bit', '8bit', or None)
             device: Device to run on ('auto', 'cuda', 'cpu')
+            trust_remote_code: Whether to trust remote code for model loading
         """
         self.model_name = model_name
         self.quantization = quantization
         self.device = device
+        self.trust_remote_code = trust_remote_code
         self.model = None
         self.tokenizer = None
         self.pipe = None
@@ -119,12 +121,12 @@ class LlamaMMLUEvaluator:
         self._load_model()
     
     def _load_model(self):
-        """Load the Llama 4 model and tokenizer."""
+        """Load the model and tokenizer."""
         try:
             logger.info("Loading tokenizer...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
-                trust_remote_code=True,
+                trust_remote_code=self.trust_remote_code,
                 padding_side="left"
             )
             
@@ -149,7 +151,7 @@ class LlamaMMLUEvaluator:
                 self.model_name,
                 quantization_config=quantization_config,
                 device_map=self.device,
-                trust_remote_code=True,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=torch.float16 if quantization_config is None else None,
             )
             
@@ -160,7 +162,7 @@ class LlamaMMLUEvaluator:
                 tokenizer=self.tokenizer,
                 device_map=self.device,
                 torch_dtype=torch.float16,
-                trust_remote_code=True
+                trust_remote_code=self.trust_remote_code
             )
             
             logger.info("Model loaded successfully!")
@@ -169,17 +171,31 @@ class LlamaMMLUEvaluator:
             logger.error(f"Error loading model: {e}")
             raise
     
-    def _format_prompt(self, question: str, choices: List[str]) -> str:
+    def _format_prompt(self, question: str, choices: List[str], use_chat_template: bool = True) -> str:
         """Format the MMLU question as a prompt for the model."""
-        prompt = f"The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
-        prompt += f"Question: {question}\n\n"
+        base_prompt = f"The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
+        base_prompt += f"Question: {question}\n\n"
         
         for i, choice in enumerate(choices):
             letter = chr(65 + i)  # A, B, C, D
-            prompt += f"{letter}. {choice}\n"
+            base_prompt += f"{letter}. {choice}\n"
         
-        prompt += "\nAnswer:"
-        return prompt
+        base_prompt += "\nAnswer:"
+        
+        # Try to use chat template if available and requested
+        if use_chat_template and hasattr(self.tokenizer, 'chat_template') and self.tokenizer.chat_template:
+            try:
+                messages = [{"role": "user", "content": base_prompt}]
+                formatted_prompt = self.tokenizer.apply_chat_template(
+                    messages, 
+                    tokenize=False, 
+                    add_generation_prompt=True
+                )
+                return formatted_prompt
+            except Exception as e:
+                logger.warning(f"Failed to apply chat template: {e}. Using basic prompt.")
+        
+        return base_prompt
     
     def _extract_answer(self, response: str) -> str:
         """Extract the answer letter from the model's response."""
@@ -198,13 +214,14 @@ class LlamaMMLUEvaluator:
         # Default to A if no answer found
         return 'A'
     
-    def evaluate_subject(self, subject: str, num_samples: Optional[int] = None) -> Dict:
+    def evaluate_subject(self, subject: str, num_samples: Optional[int] = None, use_chat_template: bool = True) -> Dict:
         """
         Evaluate the model on a specific MMLU subject.
         
         Args:
             subject: MMLU subject name
             num_samples: Number of samples to evaluate (all if None)
+            use_chat_template: Whether to try using the model's chat template
             
         Returns:
             Dictionary with evaluation results
@@ -228,7 +245,7 @@ class LlamaMMLUEvaluator:
                 correct_answer = chr(65 + example['answer'])  # Convert 0,1,2,3 to A,B,C,D
                 
                 # Format prompt
-                prompt = self._format_prompt(question, choices)
+                prompt = self._format_prompt(question, choices, use_chat_template)
                 
                 try:
                     # Generate response
@@ -294,13 +311,14 @@ class LlamaMMLUEvaluator:
                 'error': str(e)
             }
     
-    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None) -> Dict:
+    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None, use_chat_template: bool = True) -> Dict:
         """
         Evaluate the model on all or specified MMLU subjects.
         
         Args:
             subjects: List of subjects to evaluate (all if None)
             num_samples: Number of samples per subject
+            use_chat_template: Whether to try using the model's chat template
             
         Returns:
             Dictionary with comprehensive results
@@ -314,7 +332,7 @@ class LlamaMMLUEvaluator:
         category_results = {}
         
         for subject in subjects:
-            result = self.evaluate_subject(subject, num_samples)
+            result = self.evaluate_subject(subject, num_samples, use_chat_template)
             results.append(result)
             
             # Aggregate by category
@@ -346,7 +364,8 @@ class LlamaMMLUEvaluator:
             'subject_results': results,
             'evaluation_date': datetime.now().isoformat(),
             'num_subjects': len(subjects),
-            'quantization': self.quantization
+            'quantization': self.quantization,
+            'use_chat_template': use_chat_template
         }
         
         logger.info(f"Overall MMLU Accuracy: {overall_accuracy:.3f} ({total_correct}/{total_questions})")
@@ -367,6 +386,7 @@ class LlamaMMLUEvaluator:
         print(f"Overall Accuracy: {results['overall_accuracy']:.3f} ({results['total_correct']}/{results['total_questions']})")
         print(f"Subjects Evaluated: {results['num_subjects']}")
         print(f"Quantization: {results.get('quantization', 'None')}")
+        print(f"Chat Template Used: {results.get('use_chat_template', 'Unknown')}")
         print(f"Evaluation Date: {results['evaluation_date']}")
         
         print("\nCategory Breakdown:")
@@ -392,9 +412,9 @@ class LlamaMMLUEvaluator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate Llama 4 on MMLU benchmark")
+    parser = argparse.ArgumentParser(description="Evaluate any Hugging Face model on MMLU benchmark")
     parser.add_argument("--model", type=str, required=True, 
-                       help="Llama 4 model name (e.g., 'meta-llama/Llama-4-Scout-17B-16E-Instruct', 'meta-llama/Llama-4-Maverick-17B-128E-Instruct')")
+                       help="Hugging Face model name (e.g., 'microsoft/DialoGPT-medium', 'meta-llama/Llama-2-7b-hf')")
     parser.add_argument("--quantization", type=str, choices=["4bit", "8bit"], 
                        help="Quantization method")
     parser.add_argument("--subjects", nargs="+", 
@@ -405,20 +425,26 @@ def main():
                        help="Output file for results")
     parser.add_argument("--device", type=str, default="auto",
                        help="Device to run on")
+    parser.add_argument("--no-chat-template", action="store_true",
+                       help="Don't use chat template even if available")
+    parser.add_argument("--no-trust-remote-code", action="store_true",
+                       help="Don't trust remote code")
     
     args = parser.parse_args()
     
     # Initialize evaluator
-    evaluator = LlamaMMLUEvaluator(
+    evaluator = MMLUEvaluator(
         model_name=args.model,
         quantization=args.quantization,
-        device=args.device
+        device=args.device,
+        trust_remote_code=not args.no_trust_remote_code
     )
     
     # Run evaluation
     results = evaluator.evaluate_all(
         subjects=args.subjects,
-        num_samples=args.num_samples
+        num_samples=args.num_samples,
+        use_chat_template=not args.no_chat_template
     )
     
     # Save and display results
