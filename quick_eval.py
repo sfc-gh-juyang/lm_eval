@@ -23,7 +23,7 @@ POPULAR_MODELS = {
     },
     'llama2-13b': {
         'model': 'meta-llama/Llama-2-13b-hf',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Llama 2 13B base model',
         'type': 'text',
         'benchmark': 'MMLU'
@@ -37,7 +37,7 @@ POPULAR_MODELS = {
     },
     'llama2-13b-chat': {
         'model': 'meta-llama/Llama-2-13b-chat-hf',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Llama 2 13B chat model',
         'type': 'text',
         'benchmark': 'MMLU'
@@ -46,6 +46,36 @@ POPULAR_MODELS = {
         'model': 'codellama/CodeLlama-7b-hf',
         'quantization': None,
         'description': 'Code Llama 7B base model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    
+    # Llama 3 Family
+    'llama3-8b': {
+        'model': 'meta-llama/Meta-Llama-3-8B',
+        'quantization': None,
+        'description': 'Llama 3 8B base model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'llama3-8b-instruct': {
+        'model': 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+        'quantization': None,
+        'description': 'Llama 3.1 8B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'llama3-70b': {
+        'model': 'meta-llama/Meta-Llama-3-70B',
+        'quantization': None,
+        'description': 'Llama 3 70B base model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'llama3-70b-instruct': {
+        'model': 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+        'quantization': None,
+        'description': 'Llama 3.1 70B instruction-tuned',
         'type': 'text',
         'benchmark': 'MMLU'
     },
@@ -67,14 +97,14 @@ POPULAR_MODELS = {
     },
     'mixtral-8x7b': {
         'model': 'mistralai/Mixtral-8x7B-v0.1',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Mixtral 8x7B MoE model',
         'type': 'text',
         'benchmark': 'MMLU'
     },
     'mixtral-8x7b-instruct': {
         'model': 'mistralai/Mixtral-8x7B-Instruct-v0.1',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Mixtral 8x7B instruction-tuned',
         'type': 'text',
         'benchmark': 'MMLU'
@@ -90,7 +120,7 @@ POPULAR_MODELS = {
     },
     'qwen-14b': {
         'model': 'Qwen/Qwen-14B',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Qwen 14B base model',
         'type': 'text',
         'benchmark': 'MMLU'
@@ -99,6 +129,145 @@ POPULAR_MODELS = {
         'model': 'Qwen/Qwen-7B-Chat',
         'quantization': None,
         'description': 'Qwen 7B chat model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    
+    # Qwen & Qwen2 Family
+    'qwen2-7b': {
+        'model': 'Qwen/Qwen2-7B',
+        'quantization': None,
+        'description': 'Qwen2 7B base model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'qwen2-7b-instruct': {
+        'model': 'Qwen/Qwen2-7B-Instruct',
+        'quantization': None,
+        'description': 'Qwen2 7B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'qwen2-72b': {
+        'model': 'Qwen/Qwen2-72B',
+        'quantization': None,
+        'description': 'Qwen2 72B base model',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'qwen2-72b-instruct': {
+        'model': 'Qwen/Qwen2-72B-Instruct',
+        'quantization': None,
+        'description': 'Qwen2 72B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'qwen2.5-32b-instruct': {
+        'model': 'Qwen/Qwen2.5-32B-Instruct',
+        'quantization': None,
+        'description': 'Qwen2.5 32B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'qwen2.5-72b-instruct': {
+        'model': 'Qwen/Qwen2.5-72B-Instruct',
+        'quantization': None,
+        'description': 'Qwen2.5 72B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    
+    # Llama 4 Family - Native Multimodal (MoE Architecture)
+    'llama4-scout-instruct': {
+        'model': 'meta-llama/Llama-4-Scout-17B-16E-Instruct',
+        'quantization': None,
+        'description': 'Llama 4 Scout 17B (16 experts) - Multimodal with 10M context',
+        'type': 'multimodal',
+        'benchmark': 'MMMU'
+    },
+    'llama4-scout': {
+        'model': 'meta-llama/Llama-4-Scout-17B-16E',
+        'quantization': None,
+        'description': 'Llama 4 Scout 17B (16 experts) - Base multimodal model',
+        'type': 'multimodal',
+        'benchmark': 'MMMU'
+    },
+    'llama4-maverick-instruct': {
+        'model': 'meta-llama/Llama-4-Maverick-17B-128E-Instruct',
+        'quantization': None,
+        'description': 'Llama 4 Maverick 17B (128 experts) - Advanced multimodal',
+        'type': 'multimodal',
+        'benchmark': 'MMMU'
+    },
+    'llama4-maverick': {
+        'model': 'meta-llama/Llama-4-Maverick-17B-128E',
+        'quantization': None,
+        'description': 'Llama 4 Maverick 17B (128 experts) - Base multimodal model',
+        'type': 'multimodal',
+        'benchmark': 'MMMU'
+    },
+    
+    # DeepSeek Family
+    'deepseek-llm-7b': {
+        'model': 'deepseek-ai/deepseek-llm-7b-base',
+        'quantization': None,
+        'description': 'DeepSeek LLM 7B base',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-llm-7b-chat': {
+        'model': 'deepseek-ai/deepseek-llm-7b-chat',
+        'quantization': None,
+        'description': 'DeepSeek LLM 7B chat',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-coder-6.7b-instruct': {
+        'model': 'deepseek-ai/deepseek-coder-6.7b-instruct',
+        'quantization': None,
+        'description': 'DeepSeek Coder 6.7B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-v2': {
+        'model': 'deepseek-ai/DeepSeek-V2',
+        'quantization': None,
+        'description': 'DeepSeek V2 (236B MoE)',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-v3': {
+        'model': 'deepseek-ai/DeepSeek-V3',
+        'quantization': None,
+        'description': 'DeepSeek V3 (671B MoE, 37B activated) - SOTA',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-v3-0324': {
+        'model': 'deepseek-ai/DeepSeek-V3-0324',
+        'quantization': None,
+        'description': 'DeepSeek V3-0324 (671B MoE, enhanced reasoning)',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-r1': {
+        'model': 'deepseek-ai/DeepSeek-R1',
+        'quantization': None,
+        'description': 'DeepSeek R1 (671B MoE, advanced reasoning)',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-r1-distill-32b': {
+        'model': 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B',
+        'quantization': None,
+        'description': 'DeepSeek R1 Distilled 32B (Reasoning)',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+    'deepseek-r1-distill-70b': {
+        'model': 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B',
+        'quantization': None,
+        'description': 'DeepSeek R1 Distilled 70B (Reasoning)',
         'type': 'text',
         'benchmark': 'MMLU'
     },
@@ -113,7 +282,7 @@ POPULAR_MODELS = {
     },
     'vicuna-13b': {
         'model': 'lmsys/vicuna-13b-v1.5',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Vicuna 13B v1.5',
         'type': 'text',
         'benchmark': 'MMLU'
@@ -175,7 +344,7 @@ POPULAR_MODELS = {
     },
     'llava-1.5-13b': {
         'model': 'llava-hf/llava-1.5-13b-hf',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'LLaVA 1.5 13B (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -189,7 +358,7 @@ POPULAR_MODELS = {
     },
     'llava-1.6-vicuna-13b': {
         'model': 'llava-hf/llava-v1.6-vicuna-13b-hf',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'LLaVA 1.6 Vicuna 13B (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -205,7 +374,7 @@ POPULAR_MODELS = {
     },
     'qwen-vl-plus': {
         'model': 'Qwen/Qwen-VL-Plus',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'Qwen VL Plus (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -221,7 +390,7 @@ POPULAR_MODELS = {
     },
     'instructblip-vicuna-13b': {
         'model': 'Salesforce/instructblip-vicuna-13b',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'InstructBLIP Vicuna 13B (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -235,7 +404,7 @@ POPULAR_MODELS = {
     },
     'instructblip-flan-t5-xxl': {
         'model': 'Salesforce/instructblip-flan-t5-xxl',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'InstructBLIP FLAN-T5 XXL (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -265,7 +434,7 @@ POPULAR_MODELS = {
     },
     'blip2-flan-t5-xxl': {
         'model': 'Salesforce/blip2-flan-t5-xxl',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'BLIP-2 FLAN-T5 XXL (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -281,14 +450,14 @@ POPULAR_MODELS = {
     },
     'minigpt4-vicuna-13b': {
         'model': 'Vision-CAIR/MiniGPT-4-13B',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'MiniGPT-4 Vicuna 13B (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
     },
     'cogvlm-chat': {
         'model': 'THUDM/cogvlm-chat-hf',
-        'quantization': '4bit',
+        'quantization': None,
         'description': 'CogVLM Chat (multimodal)',
         'type': 'vision',
         'benchmark': 'MMMU'
@@ -349,6 +518,11 @@ def list_models(benchmark_filter=None):
         families = {}
         for key, config in mmlu_models.items():
             family = key.split('-')[0] if '-' in key else 'other'
+            # Handle special cases for family names
+            if 'llama3' in key: family = 'llama 3'
+            if 'qwen2' in key or 'qwen' in key: family = 'qwen series'
+            if 'deepseek' in key: family = 'deepseek'
+
             if family not in families:
                 families[family] = []
             families[family].append((key, config))

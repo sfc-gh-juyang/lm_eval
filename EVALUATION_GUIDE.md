@@ -121,6 +121,12 @@ The framework includes presets for these model families:
 
 The framework includes presets for these multimodal model families:
 
+#### Llama 4 Family (NEW!)
+- `llama4-scout-instruct` - Llama 4 Scout 17B (16 experts) - Multimodal with 10M context
+- `llama4-scout` - Llama 4 Scout 17B (16 experts) - Base multimodal model
+- `llama4-maverick-instruct` - Llama 4 Maverick 17B (128 experts) - Advanced multimodal
+- `llama4-maverick` - Llama 4 Maverick 17B (128 experts) - Base multimodal model
+
 #### LLaVA Family
 - `llava-1.5-7b` - LLaVA 1.5 7B (multimodal)
 - `llava-1.5-13b` - LLaVA 1.5 13B (multimodal, with 4bit quantization)
@@ -391,4 +397,65 @@ Edit the `POPULAR_MODELS` dictionary in `quick_eval.py`:
 
 The unified interface automatically handles both types of models and routes them to the appropriate evaluation script based on the `benchmark` field.
 
-This allows comprehensive benchmarking across different model families and both text-only and multimodal architectures. 
+This allows comprehensive benchmarking across different model families and both text-only and multimodal architectures.
+
+## Llama-4 Evaluation Guide
+
+Meta has released Llama-4, the first natively multimodal models in the Llama family! These models use Mixture-of-Experts (MoE) architecture and support both text and images.
+
+### Llama-4 Models
+
+The Llama-4 collection includes:
+
+- **Llama 4 Scout**: 17B active parameters (109B total), 16 experts
+  - Supports up to 10 million token context length
+  - Optimized for efficiency, fits on single H100 with 4bit quantization
+  
+- **Llama 4 Maverick**: 17B active parameters (400B total), 128 experts
+  - Advanced multimodal capabilities
+  - 1 million token context length
+  - State-of-the-art performance on vision-language tasks
+
+### Quick Llama-4 Evaluation
+```bash
+# Evaluate Llama 4 Scout (instruction-tuned, multimodal)
+python quick_eval.py llama4-scout-instruct --quick
+
+# Evaluate Llama 4 Maverick (instruction-tuned, multimodal)  
+python quick_eval.py llama4-maverick-instruct --quick
+
+# Fast evaluation on key MMMU subjects
+python quick_eval.py llama4-scout-instruct --fast
+python quick_eval.py llama4-maverick-instruct --fast
+```
+
+### Custom Llama-4 Evaluation
+```bash
+# Direct model evaluation with custom settings
+python quick_eval.py --custom-model "meta-llama/Llama-4-Scout-17B-16E-Instruct" --quantization 4bit --quick
+
+python quick_eval.py --custom-model "meta-llama/Llama-4-Maverick-17B-128E-Instruct" --quantization 4bit --fast
+```
+
+### Llama-4 Performance Expectations
+
+Based on Meta's benchmarks, Llama-4 models show strong performance on MMMU:
+
+- **Llama 4 Scout**: Expected ~73% accuracy on MMMU
+- **Llama 4 Maverick**: State-of-the-art performance, competing with GPT-4V
+
+The models excel at:
+- Visual reasoning and understanding
+- Mathematical problem solving with diagrams
+- Chart and graph interpretation
+- Multi-image reasoning tasks
+- Long context multimodal understanding
+
+### Hardware Requirements for Llama-4
+
+- **Scout models**: Single H100 (80GB) with 4bit quantization
+- **Maverick models**: Single H100 DGX host or distributed setup
+- **Memory**: ~40-80GB VRAM depending on model and quantization
+- **Context**: Up to 1M-10M tokens (unprecedented for multimodal models)
+
+These models represent a significant advancement in multimodal AI and are ideal for comprehensive MMMU evaluation. 
