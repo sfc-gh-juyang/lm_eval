@@ -537,19 +537,19 @@ def list_models(benchmark_filter=None):
         print(f"\n🖼️  MMMU Models (Vision-Language Models) - {len(mmmu_models)} models:")
         print("-" * 60)
         
-        # Group MMMU models by family
-        families = {}
-        for key, config in mmmu_models.items():
-            family = key.split('-')[0] if '-' in key else 'other'
-            if family not in families:
-                families[family] = []
-            families[family].append((key, config))
-        
-        for family, models in families.items():
-            print(f"\n{family.title()} Family:")
-            for key, config in models:
-                quant_info = f" (with {config['quantization']})" if config['quantization'] else ""
-                print(f"  {key:25s} - {config['description']}{quant_info}")
+    # Group MMMU models by family
+    families = {}
+    for key, config in mmmu_models.items():
+        family = key.split('-')[0] if '-' in key else 'other'
+        if family not in families:
+            families[family] = []
+        families[family].append((key, config))
+    
+    for family, models in families.items():
+        print(f"\n{family.title()} Family:")
+        for key, config in models:
+            quant_info = f" (with {config['quantization']})" if config['quantization'] else ""
+            print(f"  {key:25s} - {config['description']}{quant_info}")
 
 def get_fast_subjects(benchmark):
     """Get a subset of subjects for fast evaluation."""

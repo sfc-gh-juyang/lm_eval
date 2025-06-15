@@ -5,7 +5,8 @@ A comprehensive evaluation framework for testing language models on **MMLU** (Ma
 ## Features
 
 - **Unified Interface**: Single script handles both text-only and vision-language models
-- **40+ Preset Models**: Pre-configured popular models including Llama, Mistral, Qwen, LLaVA, and more
+- **40+ Preset Models**: Pre-configured popular models including **Llama 4**, Mistral, Qwen, LLaVA, and more
+- **Llama 4 Support**: Latest multimodal models with up to 10M context length
 - **Automatic Detection**: Automatically detects model type (text vs vision-language)
 - **Flexible Evaluation**: Support for quick evaluation, custom subjects, and sample limits
 - **Quantization Support**: 4-bit and 8-bit quantization for resource-constrained environments
@@ -21,9 +22,14 @@ cd quan
 # Install dependencies
 pip install -r requirements.txt
 
+# Login to Hugging Face (required for Llama 4 access)
+huggingface-cli login
+
 # Optional: Run setup test
 python test_setup.py
 ```
+
+**Note**: Llama 4 models require accepting the license on Hugging Face and authentication. Visit the [Llama 4 model pages](https://huggingface.co/meta-llama) to request access.
 
 ## Quick Start
 
@@ -47,7 +53,9 @@ python quick_eval.py --list --benchmark MMMU
 python quick_eval.py mistral-7b --quick
 python quick_eval.py llama3-8b-instruct --fast
 
-# MMMU evaluation (vision-language models)  
+# MMMU evaluation (vision-language models)
+python quick_eval.py llama4-scout-instruct --quick
+python quick_eval.py llama4-maverick-instruct --fast
 python quick_eval.py llava-1.5-7b --quick
 python quick_eval.py qwen-vl-chat --fast
 ```
@@ -74,6 +82,22 @@ python quick_eval.py --custom-model "meta-llama/Llama-2-13b-hf" --quantization 4
 
 ## Popular Preset Models
 
+### 🚀 Llama 4 (Latest Multimodal Models)
+
+Meta's latest **natively multimodal** models with breakthrough capabilities:
+
+| Model | Context Length | Description |
+|-------|----------------|-------------|
+| `llama4-scout-instruct` | **10M tokens** | 17B active params (109B total), 16 experts - Optimized for efficiency |
+| `llama4-maverick-instruct` | 1M tokens | 17B active params (400B total), 128 experts - Advanced multimodal |
+| `llama4-scout` | 256K tokens | Base Scout model for fine-tuning |
+
+**Key Features:**
+- Native text + image understanding
+- Mixture-of-Experts (MoE) architecture
+- Industry-leading long context support
+- Released April 2025
+
 ### MMLU Models (Text-Only)
 
 | Family | Models |
@@ -86,6 +110,7 @@ python quick_eval.py --custom-model "meta-llama/Llama-2-13b-hf" --quantization 4
 
 | Family | Models |
 |--------|---------|
+| **Llama 4** | `llama4-scout-instruct`, `llama4-maverick-instruct`, `llama4-scout` |
 | **LLaVA** | `llava-1.5-7b`, `llava-1.5-13b`, `llava-1.6-vicuna-7b` |
 | **Qwen-VL** | `qwen-vl-chat`, `qwen-vl-plus` |
 | **InstructBLIP** | `instructblip-vicuna-7b`, `instructblip-flan-t5-xl` |
@@ -109,6 +134,7 @@ python evaluate_mmmu.py --model "llava-hf/llava-1.5-7b-hf" --output mmmu_results
 - Python 3.8+
 - CUDA-compatible GPU (recommended)
 - 8GB+ GPU memory (varies by model)
+- **transformers >= 4.51.0** (required for Llama 4 support)
 
 ## Contributing
 

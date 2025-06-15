@@ -181,27 +181,23 @@ def run_mini_evaluation():
     print("\nRunning mini evaluation test...")
     
     try:
-        from evaluate_llama4_mmlu import LlamaMMLUEvaluator
+        import subprocess
         
-        # Try to initialize evaluator with Scout (smallest model)
-        print("Initializing evaluator...")
-        evaluator = LlamaMMLUEvaluator(
-            model_name="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-            quantization="4bit",  # Use quantization for safety
-            device="auto"
-        )
+        # Try running a quick evaluation command
+        print("Running test evaluation...")
+        result = subprocess.run([
+            'python', 'quick_eval.py', 
+            'llama4-scout-instruct', 
+            '--fast',
+            '--subjects', 'abstract_algebra'
+        ], capture_output=True, text=True, timeout=300)
         
-        # Run evaluation on just 1 sample from 1 subject
-        print("Running test evaluation (1 question)...")
-        result = evaluator.evaluate_subject("abstract_algebra", num_samples=1)
-        
-        if result['total'] > 0:
-            accuracy = result['accuracy']
-            print(f"✓ Mini evaluation successful! Accuracy: {accuracy:.1%}")
+        if result.returncode == 0:
+            print("✓ Mini evaluation successful!")
             print("Full evaluation should work correctly.")
             return True
         else:
-            print("✗ Mini evaluation failed - no questions processed")
+            print(f"✗ Mini evaluation failed: {result.stderr}")
             return False
             
     except Exception as e:
@@ -260,8 +256,8 @@ def main():
         print("\nSkipping mini evaluation test.")
     
     print("\nNext steps:")
-    print("1. Run quick evaluation: python quick_eval.py scout --quick")
-    print("2. Run full evaluation: python evaluate_llama4_mmlu.py --model meta-llama/Llama-4-Scout")
+    print("1. Run quick evaluation: python quick_eval.py llama4-scout-instruct --quick")
+    print("2. Run full evaluation: python quick_eval.py llama4-scout-instruct")
     print("3. Check README.md for more options")
     
     return True

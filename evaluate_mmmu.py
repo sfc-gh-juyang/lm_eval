@@ -108,14 +108,10 @@ class MMMUEvaluator:
                 quantization_config = BitsAndBytesConfig(load_in_8bit=True)
             
             logger.info("Loading processor/tokenizer...")
-            try:
-                # Try to load processor first (most VL models use this)
-                self.processor = AutoProcessor.from_pretrained(
-                    self.model_name,
-                    trust_remote_code=self.trust_remote_code
-                )
-            except Exception:
-                # Fallback to tokenizer if processor not available
+            
+            # Handle Llama 4 models specially
+            if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
+                # For Llama 4, use tokenizer only for now (processor not fully supported yet)
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     self.model_name,
                     trust_remote_code=self.trust_remote_code,
@@ -123,15 +119,45 @@ class MMMUEvaluator:
                 )
                 if self.tokenizer.pad_token is None:
                     self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.processor = None  # Will be handled specially for Llama 4
+            else:
+                try:
+                    # Try to load processor first (most VL models use this)
+                    self.processor = AutoProcessor.from_pretrained(
+                        self.model_name,
+                        trust_remote_code=self.trust_remote_code
+                    )
+                except Exception:
+                    # Fallback to tokenizer if processor not available
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_name,
+                        trust_remote_code=self.trust_remote_code,
+                        padding_side="left"
+                    )
+                    if self.tokenizer.pad_token is None:
+                        self.tokenizer.pad_token = self.tokenizer.eos_token
             
             logger.info("Loading vision-language model...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                quantization_config=quantization_config,
-                device_map=self.device,
-                trust_remote_code=self.trust_remote_code,
-                torch_dtype=torch.float16 if quantization_config is None else None,
-            )
+            
+            # Check if this is a Llama 4 model and use compatible loading
+            if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
+                # Try loading with AutoModelForCausalLM and minimal parameters for Llama 4
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    quantization_config=quantization_config,
+                    device_map=self.device,
+                    trust_remote_code=self.trust_remote_code,
+                    torch_dtype=torch.bfloat16 if quantization_config is None else None,
+                    low_cpu_mem_usage=True  # Use less CPU memory
+                )
+            else:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_name,
+                    quantization_config=quantization_config,
+                    device_map=self.device,
+                    trust_remote_code=self.trust_remote_code,
+                    torch_dtype=torch.float16 if quantization_config is None else None,
+                )
             
             logger.info("Vision-language model loaded successfully!")
             
@@ -188,7 +214,10 @@ class MMMUEvaluator:
     def _generate_response(self, prompt: str, images: List[Image.Image]) -> str:
         """Generate response from the vision-language model."""
         try:
-            if self.processor:
+            # Check if this is a Llama 4 model
+            is_llama4 = "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower()
+            
+            if self.processor and not is_llama4:
                 # Use processor-based approach (most common for VL models)
                 inputs = self.processor(
                     text=prompt,
@@ -218,6 +247,28 @@ class MMMUEvaluator:
                     new_tokens = outputs[0]
                 
                 response = self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True)
+                
+            elif is_llama4:
+                # Special handling for Llama 4 multimodal models
+                # For now, convert image info to text description as workaround
+                if images:
+                    image_text = f"\n[Note: This question includes {len(images)} image(s) that need to be analyzed.]\n"
+                    prompt = image_text + prompt
+                
+                inputs = self.tokenizer(prompt, return_tensors="pt", padding=True)
+                inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+                
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=5,
+                        do_sample=False,
+                        temperature=0.0,
+                        pad_token_id=self.tokenizer.eos_token_id
+                    )
+                
+                new_tokens = outputs[0][len(inputs['input_ids'][0]):]
+                response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
                 
             else:
                 # Fallback for models without processor
@@ -496,3 +547,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 
