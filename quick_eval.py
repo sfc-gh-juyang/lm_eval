@@ -79,6 +79,21 @@ POPULAR_MODELS = {
         'type': 'text',
         'benchmark': 'MMLU'
     },
+    'llama3.1-405b-instruct': {
+        'model': 'meta-llama/Llama-3.1-405B-Instruct',
+        'quantization': None,
+        'description': 'Llama 3.1 405B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
+
+    'llama3.1-405b-instruct-fp8': {
+        'model': 'meta-llama/Llama-3.1-405B-FP8',
+        'quantization': None,
+        'description': 'Llama 3.1 405B instruction-tuned',
+        'type': 'text',
+        'benchmark': 'MMLU'
+    },
     
     # Mistral Family
     'mistral-7b': {
@@ -596,10 +611,10 @@ def run_evaluation(model_key, benchmark=None, samples=None, subjects=None, quant
     
     # Determine output file and evaluation script
     if model_benchmark.upper() == 'MMLU':
-        output_file = f"{model_key.replace('-', '_')}_mmlu_results.json"
+        output_file = f"{model_key.replace('-', '_')}_mmlu_results_{quantization_override}.json"
         eval_script = "evaluate_mmlu.py"
     else:  # MMMU
-        output_file = f"{model_key.replace('-', '_')}_mmmu_results.json"
+        output_file = f"{model_key.replace('-', '_')}_mmmu_results_{quantization_override}.json"
         eval_script = "evaluate_mmmu.py"
     
     # Build command

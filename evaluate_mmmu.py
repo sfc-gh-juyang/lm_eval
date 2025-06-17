@@ -141,14 +141,14 @@ class MMMUEvaluator:
             
             # Check if this is a Llama 4 model and use compatible loading
             if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
-                # Try loading with AutoModelForCausalLM and minimal parameters for Llama 4
+                # Use AutoModelForCausalLM for Llama 4 to avoid flex attention bugs
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     quantization_config=quantization_config,
                     device_map=self.device,
                     trust_remote_code=self.trust_remote_code,
                     torch_dtype=torch.bfloat16 if quantization_config is None else None,
-                    low_cpu_mem_usage=True  # Use less CPU memory
+                    attn_implementation="eager"  # Use eager attention for stability
                 )
             else:
                 self.model = AutoModelForCausalLM.from_pretrained(
@@ -236,9 +236,12 @@ class MMMUEvaluator:
                         **inputs,
                         max_new_tokens=5,
                         do_sample=False,
-                        temperature=0.0,
                         pad_token_id=self.processor.tokenizer.eos_token_id if hasattr(self.processor, 'tokenizer') else None
                     )
+                
+                # Handle potential unpacking issues
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]  # Get the sequences if it's a tuple
                 
                 # Decode only the new tokens
                 if 'input_ids' in inputs:
@@ -263,9 +266,12 @@ class MMMUEvaluator:
                         **inputs,
                         max_new_tokens=5,
                         do_sample=False,
-                        temperature=0.0,
                         pad_token_id=self.tokenizer.eos_token_id
                     )
+                
+                # Handle potential unpacking issues with Llama 4 output
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]  # Get the sequences if it's a tuple
                 
                 new_tokens = outputs[0][len(inputs['input_ids'][0]):]
                 response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
@@ -280,10 +286,13 @@ class MMMUEvaluator:
                         **inputs,
                         max_new_tokens=5,
                         do_sample=False,
-                        temperature=0.0,
                         pad_token_id=self.tokenizer.eos_token_id
                     )
                 
+                # Handle potential unpacking issues
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]  # Get the sequences if it's a tuple
+                    
                 new_tokens = outputs[0][len(inputs['input_ids'][0]):]
                 response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             

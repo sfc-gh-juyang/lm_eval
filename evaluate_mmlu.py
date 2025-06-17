@@ -21,6 +21,7 @@ from transformers import (
     pipeline
 )
 from datasets import load_dataset
+import gc
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -123,6 +124,11 @@ class MMLUEvaluator:
     def _load_model(self):
         """Load the model and tokenizer."""
         try:
+            # Clear GPU cache before loading
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
             logger.info("Loading tokenizer...")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
@@ -139,20 +145,37 @@ class MMLUEvaluator:
             if self.quantization == "4bit":
                 quantization_config = BitsAndBytesConfig(
                     load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
                     bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    # bnb_4bit_quant_storage=torch.bfloat16,
+                    # bnb_4bit_use_double_quant=True,
+                    llm_int8_enable_fp32_cpu_offload=True
                 )
             elif self.quantization == "8bit":
-                quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+                quantization_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                )
             
+            # Determine device mapping strategy
+            device_map_config = "auto"
+
             logger.info("Loading model...")
+            model_configs = {}
+            if 'llama4' in self.model_name.lower() or 'llama-4' in self.model_name.lower():
+                model_configs = {
+                    "attn_implementation": "flex_attention",
+                }
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 quantization_config=quantization_config,
-                device_map=self.device,
+                device_map=device_map_config,
+                # max_memory=max_memory,
                 trust_remote_code=self.trust_remote_code,
-                torch_dtype=torch.float16 if quantization_config is None else None,
+                # torch_dtype=torch.float16 if quantization_config is None else None,
+                low_cpu_mem_usage=True,
+                offload_folder="./offload_weights",
+                **model_configs
             )
             
             # Create pipeline for easier inference
@@ -160,15 +183,25 @@ class MMLUEvaluator:
                 "text-generation",
                 model=self.model,
                 tokenizer=self.tokenizer,
-                device_map=self.device,
+                device_map=device_map_config,
                 torch_dtype=torch.float16,
-                trust_remote_code=self.trust_remote_code
+                trust_remote_code=self.trust_remote_code,
+                batch_size=1  # Use small batch size to save memory
             )
+            
+            # Final memory cleanup
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
             
             logger.info("Model loaded successfully!")
             
         except Exception as e:
             logger.error(f"Error loading model: {e}")
+            # Clean up on error
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
             raise
     
     def _format_prompt(self, question: str, choices: List[str], use_chat_template: bool = True) -> str:
@@ -371,6 +404,20 @@ class MMLUEvaluator:
         logger.info(f"Overall MMLU Accuracy: {overall_accuracy:.3f} ({total_correct}/{total_questions})")
         
         return final_results
+    
+    def cleanup(self):
+        """Clean up model and free memory."""
+        if hasattr(self, 'model') and self.model is not None:
+            del self.model
+        if hasattr(self, 'pipe') and self.pipe is not None:
+            del self.pipe
+        if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+            del self.tokenizer
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        logger.info("Memory cleaned up")
     
     def save_results(self, results: Dict, output_file: str):
         """Save evaluation results to JSON file."""
