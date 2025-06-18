@@ -5,6 +5,8 @@ Evaluates any compatible Hugging Face model on the MMLU benchmark.
 """
 
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:true"
+
 import json
 import argparse
 import logging

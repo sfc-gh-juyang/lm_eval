@@ -5,6 +5,9 @@ Evaluates any compatible Hugging Face model on the MMLU benchmark.
 """
 
 import os
+os.environ["VLLM_USE_V1"] = "1"
+os.environ["VLLM_CACHE_DIR"] = "/data-fast/vllm_cache"
+
 import json
 import argparse
 import logging
@@ -126,7 +129,6 @@ class MMLUEvaluator:
             trust_remote_code=self.trust_remote_code,
             tensor_parallel_size=torch.cuda.device_count(),
             dtype="bfloat16",
-            gpu_memory_utilization=0.95,
             quantization=self.quantization,
         )
 
