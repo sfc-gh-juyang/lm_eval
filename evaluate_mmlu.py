@@ -5,29 +5,24 @@ Evaluates any compatible Hugging Face model on the MMLU benchmark.
 """
 
 import os
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:true"
 
 import json
 import argparse
 import logging
-from typing import Dict, List, Tuple, Optional
 from datetime import datetime
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
 import torch
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
-    pipeline,
+    AutoProcessor,
 )
 from datasets import load_dataset
-import gc
 import warnings
 
 warnings.filterwarnings("ignore")
-from accelerate import Accelerator
 
 
 # Configure logging
@@ -106,7 +101,7 @@ class MMLUEvaluator:
     def __init__(
         self,
         model_name: str,
-        quantization: Optional[str] = None,
+        quantization: str| None = None,
         device: str = "auto",
         trust_remote_code: bool = True,
     ):
@@ -123,84 +118,71 @@ class MMLUEvaluator:
         self.quantization: str | None = quantization
         self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
         self.trust_remote_code: bool = trust_remote_code
+        self.model = None
+        self.tokenizer = None
+        self.processor = None
 
         logger.info(f"Initializing evaluator for {model_name}")
         self._load_model()
 
     def _load_model(self):
         """Load the model and tokenizer."""
-        try:
-            logger.info("Loading tokenizer...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                trust_remote_code=self.trust_remote_code,
-                padding_side="left",
+        logger.info("Loading tokenizer...")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name,
+            trust_remote_code=self.trust_remote_code,
+            padding_side="left",
+        )
+
+        # Add pad token if it doesn't exist
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Configure quantization if specified
+        quantization_config = None
+        if self.quantization == "4bit":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_storage=torch.bfloat16,
+                # bnb_4bit_use_double_quant=True,
+                llm_int8_enable_fp32_cpu_offload=True,
+            )
+        elif self.quantization == "8bit":
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_enable_fp32_cpu_offload=True,
             )
 
-            # Add pad token if it doesn't exist
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+        logger.info("Loading model...")
 
-            # Configure quantization if specified
-            quantization_config = None
-            if self.quantization == "4bit":
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
-                    bnb_4bit_quant_storage=torch.bfloat16,
-                    # bnb_4bit_use_double_quant=True,
-                    llm_int8_enable_fp32_cpu_offload=True,
-                )
-            elif self.quantization == "8bit":
-                quantization_config = BitsAndBytesConfig(
-                    load_in_8bit=True,
-                    llm_int8_enable_fp32_cpu_offload=True,
-                )
+        # Build loading arguments
+        loading_args = {
+            "device_map": "auto",
+            "trust_remote_code": self.trust_remote_code,
+            "torch_dtype": torch.float16 if quantization_config is None else None,
+            # "low_cpu_mem_usage": True,
+        }
+        # Only add quantization_config if it's not None
+        if quantization_config is not None:
+            loading_args["quantization_config"] = quantization_config
 
-            logger.info("Loading model...")
-            model_configs = {}
-            if (
-                "llama4" in self.model_name.lower()
-                or "llama-4" in self.model_name.lower()
-            ):
-                model_configs = {
-                    "attn_implementation": "flex_attention",
-                }
-            
-            # Build loading arguments
-            loading_args = {
-                "device_map": "auto",
-                "trust_remote_code": self.trust_remote_code,
-                "torch_dtype": torch.float16 if quantization_config is None else None,
-                "low_cpu_mem_usage": True,
-                **model_configs,
-            }
-            
-            # Only add quantization_config if it's not None
-            if quantization_config is not None:
-                loading_args["quantization_config"] = quantization_config
-            
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                **loading_args
-            )
+        if "llama-4" in self.model_name.lower():
+            loading_args["attn_implementation"] = "flex_attention"
+            self.processor = AutoProcessor.from_pretrained(self.model_name)
 
-            logger.info("Model loaded successfully!")
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, **loading_args
+        )
 
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            # Clean up on error
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-            raise
+        logger.info("Model loaded successfully!")
 
     def _format_prompt(
-        self, question: str, choices: List[str], use_chat_template: bool = True
+        self, question: str, choices: list[str], use_chat_template: bool = True
     ) -> str:
         """Format the MMLU question as a prompt for the model."""
-        base_prompt = f"The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
+        base_prompt = "The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
         base_prompt += f"Question: {question}\n\n"
 
         for i, choice in enumerate(choices):
@@ -209,24 +191,35 @@ class MMLUEvaluator:
 
         base_prompt += "\nAnswer:"
 
+        if self.processor is not None:
+            messages = [{"role": "user", "content": base_prompt}]
+            tokens = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
+            tokens = tokens.to(self.model.device)
+            return tokens
+
         # Try to use chat template if available and requested
         if (
             use_chat_template
             and hasattr(self.tokenizer, "chat_template")
             and self.tokenizer.chat_template
         ):
-            try:
-                messages = [{"role": "user", "content": base_prompt}]
-                formatted_prompt = self.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-                return formatted_prompt
-            except Exception as e:
-                logger.warning(
-                    f"Failed to apply chat template: {e}. Using basic prompt."
-                )
+            messages = [{"role": "user", "content": base_prompt}]
+            tokens = self.tokenizer.apply_chat_template(
+                messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
+            )
+            tokens = tokens.to(self.model.device)
 
-        return base_prompt
+        else:
+            tokens = self.tokenizer(base_prompt, return_tensors="pt")
+            tokens = tokens.to(self.model.device)
+
+        return tokens
 
     def _extract_answer(self, response: str) -> str:
         """Extract the answer letter from the model's response."""
@@ -248,10 +241,10 @@ class MMLUEvaluator:
     def evaluate_subject(
         self,
         subject: str,
-        num_samples: Optional[int] = None,
+        num_samples: int| None = None,
         use_chat_template: bool = True,
         batch_size: int = 16,
-    ) -> Dict:
+    ) -> dict:
         """
         Evaluate the model on a specific MMLU subject.
 
@@ -345,11 +338,11 @@ class MMLUEvaluator:
 
     def evaluate_all(
         self,
-        subjects: Optional[List[str]] = None,
-        num_samples: Optional[int] = None,
+        subjects: list[str]| None = None,
+        num_samples: int| None = None,
         use_chat_template: bool = True,
         batch_size: int = 16,
-    ) -> Dict:
+    ) -> dict:
         """
         Evaluate the model on all or specified MMLU subjects.
 
@@ -430,13 +423,13 @@ class MMLUEvaluator:
         gc.collect()
         logger.info("Memory cleaned up")
 
-    def save_results(self, results: Dict, output_file: str):
+    def save_results(self, results: dict, output_file: str):
         """Save evaluation results to JSON file."""
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2, default=str)
         logger.info(f"Results saved to {output_file}")
 
-    def print_summary(self, results: Dict, output_file: str = None):
+    def print_summary(self, results: dict, output_file: str| None = None):
         """Print a summary of the evaluation results and optionally save to file."""
         summary_lines = []
 
