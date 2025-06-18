@@ -94,6 +94,23 @@ POPULAR_MODELS = {
         'type': 'text',
         'benchmark': 'MMLU'
     },
+
+    "llama3.2-1b-instruct": {
+        "model": "meta-llama/Llama-3.2-1B-Instruct",
+        "quantization": None,
+        "description": "Llama 3.2 1B instruction-tuned",
+        "type": "text",
+        "benchmark": "MMLU"
+    },
+    
+    "llama3.2-11b-vision-instruct": {
+        "model": "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        "quantization": None,
+        "description": "Llama 3.2 11B vision-instruct",
+        "type": "vision",
+        "benchmark": "MMMU"
+    },
+    
     
     # Mistral Family
     'mistral-7b': {
@@ -349,36 +366,6 @@ POPULAR_MODELS = {
 
     # === MMMU Models (Vision-Language Models) ===
     
-    # LLaVA Family
-    'llava-1.5-7b': {
-        'model': 'llava-hf/llava-1.5-7b-hf',
-        'quantization': None,
-        'description': 'LLaVA 1.5 7B (multimodal)',
-        'type': 'vision',
-        'benchmark': 'MMMU'
-    },
-    'llava-1.5-13b': {
-        'model': 'llava-hf/llava-1.5-13b-hf',
-        'quantization': None,
-        'description': 'LLaVA 1.5 13B (multimodal)',
-        'type': 'vision',
-        'benchmark': 'MMMU'
-    },
-    'llava-1.6-vicuna-7b': {
-        'model': 'llava-hf/llava-v1.6-vicuna-7b-hf',
-        'quantization': None,
-        'description': 'LLaVA 1.6 Vicuna 7B (multimodal)',
-        'type': 'vision',
-        'benchmark': 'MMMU'
-    },
-    'llava-1.6-vicuna-13b': {
-        'model': 'llava-hf/llava-v1.6-vicuna-13b-hf',
-        'quantization': None,
-        'description': 'LLaVA 1.6 Vicuna 13B (multimodal)',
-        'type': 'vision',
-        'benchmark': 'MMMU'
-    },
-    
     # Qwen-VL Family
     'qwen-vl-chat': {
         'model': 'Qwen/Qwen-VL-Chat',
@@ -503,7 +490,7 @@ POPULAR_MODELS = {
 def detect_model_type(model_name):
     """Detect if a model is text-only or vision-language based on its name."""
     vision_indicators = [
-        'llava', 'qwen-vl', 'instructblip', 'blip', 'minigpt', 'cogvlm', 
+        'qwen-vl', 'instructblip', 'blip', 'minigpt', 'cogvlm', 
         'fuyu', 'git-', 'flamingo', 'kosmos', 'gpt4v', 'gpt-4v'
     ]
     
@@ -596,7 +583,7 @@ def get_fast_subjects(benchmark):
         ]
 
 def run_evaluation(model_key, benchmark=None, samples=None, subjects=None, quantization_override=None, 
-                  no_chat_template=False, split="validation"):
+                  no_chat_template=False, split="validation", batch_size=16):
     """Run evaluation for a preset model."""
     
     if model_key not in POPULAR_MODELS:
@@ -635,6 +622,9 @@ def run_evaluation(model_key, benchmark=None, samples=None, subjects=None, quant
     if no_chat_template and model_benchmark.upper() == 'MMLU':
         cmd.append("--no-chat-template")
     
+    if batch_size:
+        cmd.extend(["--batch-size", str(batch_size)])
+    
     print(f"Running {model_benchmark} evaluation for {model_key}")
     print(f"Model: {model_name}")
     print(f"Benchmark: {model_benchmark}")
@@ -670,10 +660,10 @@ Examples:
   python quick_eval.py --list --benchmark MMLU
   
   # Evaluate text model on MMLU
-  python quick_eval.py mistral-7b --quick
+  python quick_eval.py mistral-7b --samples 5
   
   # Evaluate vision-language model on MMMU  
-  python quick_eval.py llava-1.5-7b --quick
+  python quick_eval.py llava-1.5-7b --samples 3
   
   # Custom model evaluation
   python quick_eval.py --custom-model "microsoft/phi-2" --benchmark MMLU --fast
@@ -689,8 +679,7 @@ Examples:
                        help="Specify benchmark type (auto-detected if not provided)")
     parser.add_argument("--custom-model", type=str,
                        help="Use a custom Hugging Face model name")
-    parser.add_argument("--quick", action="store_true",
-                       help="Quick evaluation (5 samples for MMLU, 3 for MMMU)")
+
     parser.add_argument("--fast", action="store_true", 
                        help="Fast evaluation (10 selected subjects)")
     parser.add_argument("--quantization", choices=["4bit", "8bit"],
@@ -703,6 +692,8 @@ Examples:
                        help="Dataset split to use (MMMU only, default: validation)")
     parser.add_argument("--no-chat-template", action="store_true",
                        help="Don't use chat template even if available (MMLU only)")
+    parser.add_argument("--batch-size", type=int, default=64,
+                       help="Batch size for evaluation (default: 64)")
     
     args = parser.parse_args()
     
@@ -727,10 +718,7 @@ Examples:
         if args.quantization:
             cmd.extend(["--quantization", args.quantization])
         
-        if args.quick:
-            samples = 3 if benchmark.upper() == 'MMMU' else 5
-            cmd.extend(["--num-samples", str(samples)])
-        elif args.samples:
+        if args.samples:
             cmd.extend(["--num-samples", str(args.samples)])
         
         if args.fast:
@@ -740,6 +728,9 @@ Examples:
         
         if args.no_chat_template and benchmark.upper() == 'MMLU':
             cmd.append("--no-chat-template")
+        
+        if args.batch_size:
+            cmd.extend(["--batch-size", str(args.batch_size)])
         
         print(f"Running custom {benchmark} model evaluation: {args.custom_model}")
         print(f"Detected model type: {model_type}")
@@ -760,14 +751,7 @@ Examples:
     if not args.model:
         parser.error("Please specify a model or use --list to see available options")
     
-    # Quick mode samples
-    if args.quick:
-        # Determine benchmark first
-        model_benchmark = args.benchmark or POPULAR_MODELS[args.model]['benchmark']
-        samples = 3 if model_benchmark.upper() == 'MMMU' else 5
-        print(f"Quick mode: Evaluating {samples} samples per subject")
-    else:
-        samples = args.samples
+    samples = args.samples
     
     # Fast mode: subset of subjects
     if args.fast:
@@ -784,7 +768,8 @@ Examples:
         subjects=subjects,
         quantization_override=args.quantization,
         no_chat_template=args.no_chat_template,
-        split=args.split
+        split=args.split,
+        batch_size=args.batch_size
     )
     
     if not success:

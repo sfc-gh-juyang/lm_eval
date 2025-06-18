@@ -94,76 +94,72 @@ class MMMUEvaluator:
     
     def _load_model(self):
         """Load the vision-language model and processors."""
+        # Configure quantization if specified
+        quantization_config = None
+        if self.quantization == "4bit":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
+        elif self.quantization == "8bit":
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+        
+        logger.info("Loading processor/tokenizer...")
+        
+        # # Handle Llama 4 models specially
+        # if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
+        #     # For Llama 4, use tokenizer only for now (processor not fully supported yet)
+        #     self.tokenizer = AutoTokenizer.from_pretrained(
+        #         self.model_name,
+        #         trust_remote_code=self.trust_remote_code,
+        #         padding_side="left"
+        #     )
+        #     if self.tokenizer.pad_token is None:
+        #         self.tokenizer.pad_token = self.tokenizer.eos_token
+        #     self.processor = None  # Will be handled specially for Llama 4
+        # else:
         try:
-            # Configure quantization if specified
-            quantization_config = None
-            if self.quantization == "4bit":
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                )
-            elif self.quantization == "8bit":
-                quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-            
-            logger.info("Loading processor/tokenizer...")
-            
-            # Handle Llama 4 models specially
-            if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
-                # For Llama 4, use tokenizer only for now (processor not fully supported yet)
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_name,
-                    trust_remote_code=self.trust_remote_code,
-                    padding_side="left"
-                )
-                if self.tokenizer.pad_token is None:
-                    self.tokenizer.pad_token = self.tokenizer.eos_token
-                self.processor = None  # Will be handled specially for Llama 4
-            else:
-                try:
-                    # Try to load processor first (most VL models use this)
-                    self.processor = AutoProcessor.from_pretrained(
-                        self.model_name,
-                        trust_remote_code=self.trust_remote_code
-                    )
-                except Exception:
-                    # Fallback to tokenizer if processor not available
-                    self.tokenizer = AutoTokenizer.from_pretrained(
-                        self.model_name,
-                        trust_remote_code=self.trust_remote_code,
-                        padding_side="left"
-                    )
-                    if self.tokenizer.pad_token is None:
-                        self.tokenizer.pad_token = self.tokenizer.eos_token
-            
-            logger.info("Loading vision-language model...")
-            
-            # Check if this is a Llama 4 model and use compatible loading
-            if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
-                # Use AutoModelForCausalLM for Llama 4 to avoid flex attention bugs
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
-                    quantization_config=quantization_config,
-                    device_map=self.device,
-                    trust_remote_code=self.trust_remote_code,
-                    torch_dtype=torch.bfloat16 if quantization_config is None else None,
-                    attn_implementation="eager"  # Use eager attention for stability
-                )
-            else:
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_name,
-                    quantization_config=quantization_config,
-                    device_map=self.device,
-                    trust_remote_code=self.trust_remote_code,
-                    torch_dtype=torch.float16 if quantization_config is None else None,
-                )
-            
-            logger.info("Vision-language model loaded successfully!")
-            
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            raise
+            # Try to load processor first (most VL models use this)
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_name,
+                trust_remote_code=self.trust_remote_code
+            )
+        except Exception:
+            # Fallback to tokenizer if processor not available
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=self.trust_remote_code,
+                padding_side="left"
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        logger.info("Loading vision-language model...")
+        
+        # Check if this is a Llama 4 model and use compatible loading
+        if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
+            # Use AutoModelForCausalLM for Llama 4 to avoid flex attention bugs
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=quantization_config,
+                device_map=self.device,
+                trust_remote_code=self.trust_remote_code,
+                torch_dtype=torch.bfloat16 if quantization_config is None else None,
+                # attn_implementation="eager"  # Use eager attention for stability
+                attn_implementation="flex_attention",
+            )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=quantization_config,
+                device_map=self.device,
+                trust_remote_code=self.trust_remote_code,
+                torch_dtype=torch.float16 if quantization_config is None else None,
+            )
+        
+        logger.info("Vision-language model loaded successfully!")
     
     def _process_images(self, example: Dict) -> List[Image.Image]:
         """Extract and process images from the example."""
@@ -174,6 +170,8 @@ class MMMUEvaluator:
             image_key = f'image_{i}'
             if image_key in example and example[image_key] is not None:
                 image = example[image_key]
+                
+                # Handle different image formats
                 if isinstance(image, str):
                     # If it's a URL or path, load it
                     if image.startswith('http'):
@@ -183,12 +181,22 @@ class MMMUEvaluator:
                 elif hasattr(image, 'convert'):
                     # Already a PIL Image
                     image = image.convert('RGB')
-                else:
-                    # Try to convert from array or other format
+                elif hasattr(image, '__array_interface__') or hasattr(image, 'shape'):
+                    # Numpy array or similar
                     image = Image.fromarray(image).convert('RGB')
+                elif isinstance(image, dict):
+                    # Skip corrupted/invalid image data from batching
+                    continue
+                else:
+                    # Try to convert other formats
+                    try:
+                        image = Image.fromarray(image).convert('RGB')
+                    except:
+                        # Skip if can't convert
+                        continue
                 
                 images.append(image)
-        
+
         return images
     
     def _format_prompt(self, question: str, choices: List[str], images: List[Image.Image]) -> str:
@@ -231,11 +239,20 @@ class MMMUEvaluator:
                     if hasattr(inputs[key], 'to'):
                         inputs[key] = inputs[key].to(self.model.device)
                 
+                # Filter inputs to only include what the model expects
+                # Common inputs for vision-language models
+                filtered_inputs = {}
+                for key in ['input_ids', 'attention_mask', ]:
+                    if key in inputs:
+                        filtered_inputs[key] = inputs[key]
+                
                 with torch.no_grad():
                     outputs = self.model.generate(
-                        **inputs,
+                        **filtered_inputs,
                         max_new_tokens=5,
                         do_sample=False,
+                        temperature=1.0,  # Set explicit value to avoid warning
+                        top_p=1.0,  # Set explicit value to avoid warning
                         pad_token_id=self.processor.tokenizer.eos_token_id if hasattr(self.processor, 'tokenizer') else None
                     )
                 
@@ -266,6 +283,8 @@ class MMMUEvaluator:
                         **inputs,
                         max_new_tokens=5,
                         do_sample=False,
+                        temperature=1.0,  # Set explicit value to avoid warning
+                        top_p=1.0,  # Set explicit value to avoid warning
                         pad_token_id=self.tokenizer.eos_token_id
                     )
                 
@@ -286,6 +305,8 @@ class MMMUEvaluator:
                         **inputs,
                         max_new_tokens=5,
                         do_sample=False,
+                        temperature=1.0,  # Set explicit value to avoid warning
+                        top_p=1.0,  # Set explicit value to avoid warning
                         pad_token_id=self.tokenizer.eos_token_id
                     )
                 
@@ -314,32 +335,39 @@ class MMMUEvaluator:
         # Default to A if no answer found
         return 'A'
     
-    def evaluate_subject(self, subject: str, num_samples: Optional[int] = None, split: str = 'validation') -> Dict:
+    def evaluate_subject(self, subject: str, num_samples: Optional[int] = None, split: str = 'test', batch_size: int = 4) -> Dict:
         """
         Evaluate the model on a specific MMMU subject.
         
         Args:
             subject: MMMU subject name
             num_samples: Number of samples to evaluate (all if None)
-            split: Dataset split to use ('validation', 'dev', or 'test')
+            split: Dataset split to use ('test', 'dev', or 'test')
             
         Returns:
             Dictionary with evaluation results
         """
         logger.info(f"Evaluating {subject} on {split} split...")
         
-        try:
-            # Load the dataset for this subject
-            dataset = load_dataset("MMMU/MMMU", subject)[split]
+        # Load the dataset for this subject
+        dataset = load_dataset("MMMU/MMMU", subject)[split]
+        
+        if num_samples:
+            dataset = dataset.select(range(min(num_samples, len(dataset))))
+        
+        correct = 0
+        total = len(dataset)
+        predictions = []
+        
+        # Process examples individually (batching corrupts image data)
+        # But organize progress tracking by batch_size groups
+        dataset_list = list(dataset)
+        
+        for batch_start in tqdm(range(0, total, batch_size), desc=f"Evaluating {subject}"):
+            batch_end = min(batch_start + batch_size, total)
             
-            if num_samples:
-                dataset = dataset.select(range(min(num_samples, len(dataset))))
-            
-            correct = 0
-            total = len(dataset)
-            predictions = []
-            
-            for i, example in enumerate(tqdm(dataset, desc=f"Evaluating {subject}")):
+            for i in range(batch_start, batch_end):
+                example = dataset_list[i]
                 question = example['question']
                 choices = example['options']
                 correct_answer = example['answer']
@@ -350,68 +378,41 @@ class MMMUEvaluator:
                 # Format prompt
                 prompt = self._format_prompt(question, choices, images)
                 
-                try:
-                    # Generate response
-                    response = self._generate_response(prompt, images)
-                    predicted_answer = self._extract_answer(response)
-                    
-                    is_correct = predicted_answer == correct_answer
-                    if is_correct:
-                        correct += 1
-                    
-                    predictions.append({
-                        'question': question,
-                        'choices': choices,
-                        'correct_answer': correct_answer,
-                        'predicted_answer': predicted_answer,
-                        'is_correct': is_correct,
-                        'response': response,
-                        'num_images': len(images),
-                        'image_types': example.get('img_type', [])
-                    })
-                    
-                except Exception as e:
-                    logger.warning(f"Error processing question {i} in {subject}: {e}")
-                    predictions.append({
-                        'question': question,
-                        'choices': choices,
-                        'correct_answer': correct_answer,
-                        'predicted_answer': 'A',  # Default
-                        'is_correct': False,
-                        'response': f"Error: {e}",
-                        'num_images': 0,
-                        'image_types': []
-                    })
+                # Generate response
+                response = self._generate_response(prompt, images)
+                predicted_answer = self._extract_answer(response)
+                
+                is_correct = predicted_answer == correct_answer
+                if is_correct:
+                    correct += 1
+                
+                predictions.append({
+                    'question': question,
+                    'choices': choices,
+                    'correct_answer': correct_answer,
+                    'predicted_answer': predicted_answer,
+                    'is_correct': is_correct,
+                    'response': response,
+                    'num_images': len(images),
+                    'image_types': example.get('img_type', [])
+                })
+        
+        accuracy = correct / total if total > 0 else 0
+        
+        result = {
+            'subject': subject,
+            'discipline': MMMU_SUBJECTS.get(subject, 'Other'),
+            'accuracy': accuracy,
+            'correct': correct,
+            'total': total,
+            'split': split,
+            'predictions': predictions
+        }
+        
+        logger.info(f"{subject}: {accuracy:.3f} ({correct}/{total})")
+        return result
             
-            accuracy = correct / total if total > 0 else 0
-            
-            result = {
-                'subject': subject,
-                'discipline': MMMU_SUBJECTS.get(subject, 'Other'),
-                'accuracy': accuracy,
-                'correct': correct,
-                'total': total,
-                'split': split,
-                'predictions': predictions
-            }
-            
-            logger.info(f"{subject}: {accuracy:.3f} ({correct}/{total})")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error evaluating {subject}: {e}")
-            return {
-                'subject': subject,
-                'discipline': MMMU_SUBJECTS.get(subject, 'Other'),
-                'accuracy': 0.0,
-                'correct': 0,
-                'total': 0,
-                'split': split,
-                'predictions': [],
-                'error': str(e)
-            }
-    
-    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None, split: str = 'validation') -> Dict:
+    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None, split: str = 'validation', batch_size: int = 4) -> Dict:
         """
         Evaluate the model on all or specified MMMU subjects.
         
@@ -432,7 +433,7 @@ class MMMUEvaluator:
         discipline_results = {}
         
         for subject in subjects:
-            result = self.evaluate_subject(subject, num_samples, split)
+            result = self.evaluate_subject(subject, num_samples, split, batch_size)
             results.append(result)
             
             # Aggregate by discipline
@@ -479,38 +480,51 @@ class MMMUEvaluator:
             json.dump(results, f, indent=2, default=str)
         logger.info(f"Results saved to {output_file}")
     
-    def print_summary(self, results: Dict):
-        """Print a summary of the evaluation results."""
-        print("\n" + "="*60)
-        print(f"MMMU Evaluation Results for {results['model']}")
-        print("="*60)
-        print(f"Overall Accuracy: {results['overall_accuracy']:.3f} ({results['total_correct']}/{results['total_questions']})")
-        print(f"Subjects Evaluated: {results['num_subjects']}")
-        print(f"Dataset Split: {results['split']}")
-        print(f"Quantization: {results.get('quantization', 'None')}")
-        print(f"Evaluation Date: {results['evaluation_date']}")
+    def print_summary(self, results: Dict, output_file: str = None):
+        """Print a summary of the evaluation results and optionally save to file."""
+        summary_lines = []
         
-        print("\nDiscipline Breakdown:")
-        print("-" * 50)
+        # Build summary content
+        summary_lines.append("=" * 60)
+        summary_lines.append(f"MMMU Evaluation Results for {results['model']}")
+        summary_lines.append("=" * 60)
+        summary_lines.append(f"Overall Accuracy: {results['overall_accuracy']:.3f} ({results['total_correct']}/{results['total_questions']})")
+        summary_lines.append(f"Subjects Evaluated: {results['num_subjects']}")
+        summary_lines.append(f"Dataset Split: {results['split']}")
+        summary_lines.append(f"Quantization: {results.get('quantization', 'None')}")
+        summary_lines.append(f"Evaluation Date: {results['evaluation_date']}")
+        
+        summary_lines.append("\nDiscipline Breakdown:")
+        summary_lines.append("-" * 50)
         for discipline, disc_results in results['discipline_results'].items():
             accuracy = disc_results['accuracy']
             correct = disc_results['correct']
             total = disc_results['total']
-            print(f"{discipline:30s}: {accuracy:.3f} ({correct:4d}/{total:4d})")
+            summary_lines.append(f"{discipline:30s}: {accuracy:.3f} ({correct:4d}/{total:4d})")
         
-        print("\nTop 10 Subject Scores:")
-        print("-" * 50)
+        summary_lines.append("\nTop 10 Subject Scores:")
+        summary_lines.append("-" * 50)
         subject_scores = [(r['subject'], r['accuracy']) for r in results['subject_results']]
         subject_scores.sort(key=lambda x: x[1], reverse=True)
         
         for subject, accuracy in subject_scores[:10]:
-            print(f"{subject:30s}: {accuracy:.3f}")
+            summary_lines.append(f"{subject:30s}: {accuracy:.3f}")
         
         if len(subject_scores) > 10:
-            print("\nBottom 10 Subject Scores:")
-            print("-" * 50)
+            summary_lines.append("\nBottom 10 Subject Scores:")
+            summary_lines.append("-" * 50)
             for subject, accuracy in subject_scores[-10:]:
-                print(f"{subject:30s}: {accuracy:.3f}")
+                summary_lines.append(f"{subject:30s}: {accuracy:.3f}")
+        
+        # Print to console
+        print("\n" + "\n".join(summary_lines))
+        
+        # Write to file if output_file is provided
+        if output_file:
+            summary_file = output_file.replace(".json", "_summary.txt")
+            with open(summary_file, "w") as f:
+                f.write("\n".join(summary_lines))
+            logger.info(f"Summary saved to {summary_file}")
 
 
 def main():
@@ -531,6 +545,8 @@ def main():
                        help="Device to run on")
     parser.add_argument("--no-trust-remote-code", action="store_true",
                        help="Don't trust remote code")
+    parser.add_argument("--batch-size", type=int, default=4,
+                       help="Batch size for evaluation (default: 4, smaller due to image processing)")
     
     args = parser.parse_args()
     
@@ -546,12 +562,13 @@ def main():
     results = evaluator.evaluate_all(
         subjects=args.subjects,
         num_samples=args.num_samples,
-        split=args.split
+        split=args.split,
+        batch_size=args.batch_size
     )
     
     # Save and display results
     evaluator.save_results(results, args.output)
-    evaluator.print_summary(results)
+    evaluator.print_summary(results, args.output)
 
 
 if __name__ == "__main__":
