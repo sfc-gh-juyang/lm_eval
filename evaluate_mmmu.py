@@ -138,26 +138,27 @@ class MMMUEvaluator:
         
         logger.info("Loading vision-language model...")
         
+        # Build loading arguments
+        loading_args = {
+            "trust_remote_code": self.trust_remote_code,
+            "torch_dtype": torch.bfloat16 if quantization_config is None else None,
+            "low_cpu_mem_usage": True,
+            "device_map": "auto",
+        }
+        
+        # Only add quantization_config if it's not None
+        if quantization_config is not None:
+            loading_args["quantization_config"] = quantization_config
+        
+
         # Check if this is a Llama 4 model and use compatible loading
         if "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower():
-            # Use AutoModelForCausalLM for Llama 4 to avoid flex attention bugs
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                quantization_config=quantization_config,
-                device_map=self.device,
-                trust_remote_code=self.trust_remote_code,
-                torch_dtype=torch.bfloat16 if quantization_config is None else None,
-                # attn_implementation="eager"  # Use eager attention for stability
-                attn_implementation="flex_attention",
-            )
-        else:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                quantization_config=quantization_config,
-                device_map=self.device,
-                trust_remote_code=self.trust_remote_code,
-                torch_dtype=torch.float16 if quantization_config is None else None,
-            )
+            loading_args["attn_implementation"] = "flex_attention"
+            
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            **loading_args
+        )
         
         logger.info("Vision-language model loaded successfully!")
     
@@ -221,107 +222,102 @@ class MMMUEvaluator:
     
     def _generate_response(self, prompt: str, images: List[Image.Image]) -> str:
         """Generate response from the vision-language model."""
-        try:
-            # Check if this is a Llama 4 model
-            is_llama4 = "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower()
+        # Check if this is a Llama 4 model
+        # is_llama4 = "llama-4" in self.model_name.lower() or "llama4" in self.model_name.lower()
+        
+        if self.processor:
+            # Use processor-based approach (most common for VL models)
+            inputs = self.processor(
+                text=prompt,
+                images=images if images else None,
+                return_tensors="pt",
+                padding=True
+            )
             
-            if self.processor and not is_llama4:
-                # Use processor-based approach (most common for VL models)
-                inputs = self.processor(
-                    text=prompt,
-                    images=images if images else None,
-                    return_tensors="pt",
-                    padding=True
+            # Move inputs to device
+            for key in inputs:
+                if hasattr(inputs[key], 'to'):
+                    inputs[key] = inputs[key].to(self.model.device)
+            
+            # Filter inputs to only include what the model expects
+            # Common inputs for vision-language models
+            filtered_inputs = {}
+            for key in ['input_ids', 'attention_mask', ]:
+                if key in inputs:
+                    filtered_inputs[key] = inputs[key]
+            
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **filtered_inputs,
+                    max_new_tokens=5,
+                    do_sample=False,
+                    temperature=1.0,  # Set explicit value to avoid warning
+                    top_p=1.0,  # Set explicit value to avoid warning
+                    pad_token_id=self.processor.tokenizer.eos_token_id if hasattr(self.processor, 'tokenizer') else None
                 )
-                
-                # Move inputs to device
-                for key in inputs:
-                    if hasattr(inputs[key], 'to'):
-                        inputs[key] = inputs[key].to(self.model.device)
-                
-                # Filter inputs to only include what the model expects
-                # Common inputs for vision-language models
-                filtered_inputs = {}
-                for key in ['input_ids', 'attention_mask', ]:
-                    if key in inputs:
-                        filtered_inputs[key] = inputs[key]
-                
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        **filtered_inputs,
-                        max_new_tokens=5,
-                        do_sample=False,
-                        temperature=1.0,  # Set explicit value to avoid warning
-                        top_p=1.0,  # Set explicit value to avoid warning
-                        pad_token_id=self.processor.tokenizer.eos_token_id if hasattr(self.processor, 'tokenizer') else None
-                    )
-                
-                # Handle potential unpacking issues
-                if isinstance(outputs, tuple):
-                    outputs = outputs[0]  # Get the sequences if it's a tuple
-                
-                # Decode only the new tokens
-                if 'input_ids' in inputs:
-                    new_tokens = outputs[0][len(inputs['input_ids'][0]):]
-                else:
-                    new_tokens = outputs[0]
-                
-                response = self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True)
-                
-            elif is_llama4:
-                # Special handling for Llama 4 multimodal models
-                # For now, convert image info to text description as workaround
-                if images:
-                    image_text = f"\n[Note: This question includes {len(images)} image(s) that need to be analyzed.]\n"
-                    prompt = image_text + prompt
-                
-                inputs = self.tokenizer(prompt, return_tensors="pt", padding=True)
-                inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-                
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        **inputs,
-                        max_new_tokens=5,
-                        do_sample=False,
-                        temperature=1.0,  # Set explicit value to avoid warning
-                        top_p=1.0,  # Set explicit value to avoid warning
-                        pad_token_id=self.tokenizer.eos_token_id
-                    )
-                
-                # Handle potential unpacking issues with Llama 4 output
-                if isinstance(outputs, tuple):
-                    outputs = outputs[0]  # Get the sequences if it's a tuple
-                
+            
+            # Handle potential unpacking issues
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]  # Get the sequences if it's a tuple
+            
+            # Decode only the new tokens
+            if 'input_ids' in inputs:
                 new_tokens = outputs[0][len(inputs['input_ids'][0]):]
-                response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
-                
             else:
-                # Fallback for models without processor
-                inputs = self.tokenizer(prompt, return_tensors="pt", padding=True)
-                inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-                
-                with torch.no_grad():
-                    outputs = self.model.generate(
-                        **inputs,
-                        max_new_tokens=5,
-                        do_sample=False,
-                        temperature=1.0,  # Set explicit value to avoid warning
-                        top_p=1.0,  # Set explicit value to avoid warning
-                        pad_token_id=self.tokenizer.eos_token_id
-                    )
-                
-                # Handle potential unpacking issues
-                if isinstance(outputs, tuple):
-                    outputs = outputs[0]  # Get the sequences if it's a tuple
-                    
-                new_tokens = outputs[0][len(inputs['input_ids'][0]):]
-                response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+                new_tokens = outputs[0]
             
-            return response.strip()
+            response = self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True)
             
-        except Exception as e:
-            logger.warning(f"Error generating response: {e}")
-            return "A"  # Default fallback
+        # elif is_llama4:
+        #     # Special handling for Llama 4 multimodal models
+        #     # For now, convert image info to text description as workaround
+        #     if images:
+        #         image_text = f"\n[Note: This question includes {len(images)} image(s) that need to be analyzed.]\n"
+        #         prompt = image_text + prompt
+            
+        #     inputs = self.tokenizer(prompt, return_tensors="pt", padding=True)
+        #     inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+            
+        #     with torch.no_grad():
+        #         outputs = self.model.generate(
+        #             **inputs,
+        #             max_new_tokens=5,
+        #             do_sample=False,
+        #             temperature=1.0,  # Set explicit value to avoid warning
+        #             top_p=1.0,  # Set explicit value to avoid warning
+        #             pad_token_id=self.tokenizer.eos_token_id
+        #         )
+            
+        #     # Handle potential unpacking issues with Llama 4 output
+        #     if isinstance(outputs, tuple):
+        #         outputs = outputs[0]  # Get the sequences if it's a tuple
+            
+        #     new_tokens = outputs[0][len(inputs['input_ids'][0]):]
+        #     response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            
+        else:
+            # Fallback for models without processor
+            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True)
+            inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+            
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=5,
+                    do_sample=False,
+                    temperature=1.0,  # Set explicit value to avoid warning
+                    top_p=1.0,  # Set explicit value to avoid warning
+                    pad_token_id=self.tokenizer.eos_token_id
+                )
+            
+            # Handle potential unpacking issues
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]  # Get the sequences if it's a tuple
+                
+            new_tokens = outputs[0][len(inputs['input_ids'][0]):]
+            response = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+        
+        return response.strip()
     
     def _extract_answer(self, response: str) -> str:
         """Extract the answer letter from the model's response."""
@@ -347,8 +343,6 @@ class MMMUEvaluator:
         Returns:
             Dictionary with evaluation results
         """
-        logger.info(f"Evaluating {subject} on {split} split...")
-        
         # Load the dataset for this subject
         dataset = load_dataset("MMMU/MMMU", subject)[split]
         
@@ -363,7 +357,7 @@ class MMMUEvaluator:
         # But organize progress tracking by batch_size groups
         dataset_list = list(dataset)
         
-        for batch_start in tqdm(range(0, total, batch_size), desc=f"Evaluating {subject}"):
+        for batch_start in range(0, total, batch_size):
             batch_end = min(batch_start + batch_size, total)
             
             for i in range(batch_start, batch_end):
@@ -412,7 +406,7 @@ class MMMUEvaluator:
         logger.info(f"{subject}: {accuracy:.3f} ({correct}/{total})")
         return result
             
-    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None, split: str = 'validation', batch_size: int = 4) -> Dict:
+    def evaluate_all(self, subjects: Optional[List[str]] = None, num_samples: Optional[int] = None, split: str = 'test', batch_size: int = 16) -> Dict:
         """
         Evaluate the model on all or specified MMMU subjects.
         
@@ -537,7 +531,7 @@ def main():
                        help="Specific subjects to evaluate (default: all)")
     parser.add_argument("--num-samples", type=int, 
                        help="Number of samples per subject (default: all)")
-    parser.add_argument("--split", type=str, default="validation", choices=["dev", "validation", "test"],
+    parser.add_argument("--split", type=str, default="test", choices=["dev", "validation", "test"],
                        help="Dataset split to use")
     parser.add_argument("--output", type=str, default="mmmu_results.json",
                        help="Output file for results")
