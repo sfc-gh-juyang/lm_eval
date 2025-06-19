@@ -5,9 +5,6 @@ Evaluates any compatible Hugging Face model on the MMLU benchmark.
 """
 
 import os
-
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:true"
-
 import json
 import argparse
 import logging
@@ -101,7 +98,7 @@ class MMLUEvaluator:
     def __init__(
         self,
         model_name: str,
-        quantization: str| None = None,
+        quantization: str | None = None,
         device: str = "auto",
         trust_remote_code: bool = True,
     ):
@@ -170,7 +167,8 @@ class MMLUEvaluator:
 
         if "llama-4" in self.model_name.lower():
             loading_args["attn_implementation"] = "flex_attention"
-            self.processor = AutoProcessor.from_pretrained(self.model_name)
+            print("loading processor for {}".format(self.model_name))
+            # self.processor = AutoProcessor.from_pretrained(self.model_name)
 
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name, **loading_args
@@ -179,20 +177,31 @@ class MMLUEvaluator:
         logger.info("Model loaded successfully!")
 
     def _format_prompt(
-        self, question: str, choices: list[str], use_chat_template: bool = True
+        self,
+        batch_questions: list[str],
+        batch_choices: list[list[str]],
+        use_chat_template: bool = True,
     ) -> str:
         """Format the MMLU question as a prompt for the model."""
-        base_prompt = "The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
-        base_prompt += f"Question: {question}\n\n"
+        batched_prompts = []
+        for question, choices in zip(batch_questions, batch_choices):
+            base_prompt = "The following is a multiple choice question. Answer with only the letter (A, B, C, or D) of the correct choice.\n\n"
+            base_prompt += f"Question: {question}\n\n"
 
-        for i, choice in enumerate(choices):
-            letter = chr(65 + i)  # A, B, C, D
-            base_prompt += f"{letter}. {choice}\n"
+            for i, choice in enumerate(choices):
+                letter = chr(65 + i)  # A, B, C, D
+                base_prompt += f"{letter}. {choice}\n"
 
-        base_prompt += "\nAnswer:"
+            base_prompt += "\nAnswer:"
+
+            batched_prompts.append(base_prompt)
 
         if self.processor is not None:
-            messages = [{"role": "user", "content": base_prompt}]
+            messages = [
+                [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+                for prompt in batched_prompts
+            ]
+            # print(messages)
             tokens = self.processor.apply_chat_template(
                 messages,
                 tokenize=True,
@@ -201,6 +210,7 @@ class MMLUEvaluator:
                 return_tensors="pt",
             )
             tokens = tokens.to(self.model.device)
+            # print(tokens)
             return tokens
 
         # Try to use chat template if available and requested
@@ -209,16 +219,27 @@ class MMLUEvaluator:
             and hasattr(self.tokenizer, "chat_template")
             and self.tokenizer.chat_template
         ):
-            messages = [{"role": "user", "content": base_prompt}]
+            messages = [
+                [{"role": "user", "content": prompt}] for prompt in batched_prompts
+            ]
             tokens = self.tokenizer.apply_chat_template(
-                messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                padding=True,
+                truncation=True,
             )
             tokens = tokens.to(self.model.device)
 
         else:
-            tokens = self.tokenizer(base_prompt, return_tensors="pt")
+            tokens = self.tokenizer(
+                batched_prompts, return_tensors="pt", padding=True, truncation=True
+            )
             tokens = tokens.to(self.model.device)
 
+        # print(tokens)
         return tokens
 
     def _extract_answer(self, response: str) -> str:
@@ -241,7 +262,7 @@ class MMLUEvaluator:
     def evaluate_subject(
         self,
         subject: str,
-        num_samples: int| None = None,
+        num_samples: int | None = None,
         use_chat_template: bool = True,
         batch_size: int = 16,
     ) -> dict:
@@ -272,21 +293,12 @@ class MMLUEvaluator:
         # Process in batches
         for batch in batched_dataset:
             # Prepare batch data
-            # print(batch.keys())
-
             batch_questions = batch["question"]
             batch_choices = batch["choices"]
             batch_correct_answers = [chr(65 + answer) for answer in batch["answer"]]
-            batch_prompts = [
-                self._format_prompt(question, choices, use_chat_template)
-                for question, choices in zip(batch_questions, batch_choices)
-            ]
-
-            # Tokenize batch
-            inputs = self.tokenizer(
-                batch_prompts, return_tensors="pt", padding=True, truncation=True
+            inputs = self._format_prompt(
+                batch_questions, batch_choices, use_chat_template
             )
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             # Generate responses for batch
             with torch.no_grad():
@@ -298,17 +310,19 @@ class MMLUEvaluator:
                     pad_token_id=self.tokenizer.eos_token_id,
                 )
 
+            decoded_outputs = self.tokenizer.batch_decode(
+                outputs[:, inputs["input_ids"].shape[-1] :], skip_special_tokens=True
+            )
             # Process each response in the batch
-            for i, (question, choices, correct_answer) in enumerate(
-                zip(batch_questions, batch_choices, batch_correct_answers)
-            ):
-                # Decode response (only new tokens)
-                input_length = len(inputs["input_ids"][i])
-                response = self.tokenizer.decode(
-                    outputs[i][input_length:], skip_special_tokens=True
+            for i, (question, choices, response, correct_answer) in enumerate(
+                zip(
+                    batch_questions,
+                    batch_choices,
+                    decoded_outputs,
+                    batch_correct_answers,
                 )
+            ):
                 predicted_answer = self._extract_answer(response)
-
                 is_correct = predicted_answer == correct_answer
                 if is_correct:
                     correct += 1
@@ -338,8 +352,8 @@ class MMLUEvaluator:
 
     def evaluate_all(
         self,
-        subjects: list[str]| None = None,
-        num_samples: int| None = None,
+        subjects: list[str] | None = None,
+        num_samples: int | None = None,
         use_chat_template: bool = True,
         batch_size: int = 16,
     ) -> dict:
@@ -420,7 +434,6 @@ class MMLUEvaluator:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        gc.collect()
         logger.info("Memory cleaned up")
 
     def save_results(self, results: dict, output_file: str):
@@ -429,7 +442,7 @@ class MMLUEvaluator:
             json.dump(results, f, indent=2, default=str)
         logger.info(f"Results saved to {output_file}")
 
-    def print_summary(self, results: dict, output_file: str| None = None):
+    def print_summary(self, results: dict, output_file: str | None = None):
         """Print a summary of the evaluation results and optionally save to file."""
         summary_lines = []
 
